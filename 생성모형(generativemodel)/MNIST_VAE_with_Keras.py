@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Jan 27 15:19:25 2018
-
-@author: 2017B221
+VAE(Variational Autoencoder)입니다. 
+주석을 한국어로 작성하여 한국어 사용자들이 이해하기 쉽게 하였습니다.
+궁금한점이나/수정이 필요한 부분은 알려주세요
+이메일: stat.donghwan@gmail.com
 """
 
 # import module, 모듈 불러오기 
