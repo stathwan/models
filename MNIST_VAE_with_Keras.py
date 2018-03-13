@@ -10,7 +10,7 @@ VAE(Variational Autoencoder)입니다.
 import numpy as np
 import matplotlib.pyplot as plt
 
-from keras.layers import Dense, Conv2D, MaxPooling2D, Input, Flatten, Reshape, UpSampling2D, Conv2DTranspose
+from keras.layers import Dense, Conv2D, Input, Flatten, Reshape, Conv2DTranspose
 from keras.models import Model 
 from keras import backend as K 
 from keras.engine.topology import Layer
@@ -102,7 +102,6 @@ log_variance_hat= Dense(latent_size, activation='linear')(encoder_h)
 z=sampling(latent_size,epsilon_stddev)([mu_hat, log_variance_hat])
 
 #decoder, 디코더
-
 decoder_h=Dense(14*14*64, activation='relu', name='decoder_h1')(z) # to make generator
 decoder_h=Reshape((64,14,14), input_shape=(14*14*64,), name='decoder_h2')(decoder_h)
 decoder_h=Conv2DTranspose(32 , kernel_size=(3,3),  activation='relu', padding='same', strides=(2,2), name='decoder_h3')(decoder_h)
