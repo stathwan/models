@@ -13,13 +13,17 @@ import cv2
 from keras.models import Model, Sequential
 from keras.layers import Dense, Flatten, Input, BatchNormalization, Reshape, Dropout, Conv2D,UpSampling2D, Conv2DTranspose
 from keras.layers.advanced_activations import LeakyReLU
+
+import matplotlib
+matplotlib.use('Agg') # if threr are QXcbConnection: Could not connect to display pyplot error
+
+
 import matplotlib.pyplot as plt
 from keras.optimizers import Adam
 
 class FaceDCGAN:
-    def __init__(self,chennel=1):
-        self.pyroot = os.getcwd()
-        self.impath=glob.glob(self.pyroot+'\\data\\*')    
+    def __init__(self,chennel=3):
+        self.impath=glob.glob('./data/*')    
         
         self.img_size=64
         self.chennel=chennel
@@ -27,9 +31,9 @@ class FaceDCGAN:
         self.noise_shape = (100,)
 
         
-        self.epochs=10000
-        self.batch_size=100
-        self.save_interval=100
+        self.epochs=1000000
+        self.batch_size=128
+        self.save_interval=1000
         
         self.face_img = self.load_data()        
         self.Generator=self.Generator_model() # 생성모형 (판별모형 학습시 test 이미지 생성, 훈련 후 test이미지 생성)
@@ -40,7 +44,7 @@ class FaceDCGAN:
         
         face_img=np.empty(shape=[1,self.img_size,self.img_size,3])
         
-        for i in range(len(self.impath)) :
+        for i in range(int(len(self.impath))) :
             img=cv2.imread(self.impath[i])
             img=img.reshape(1,self.img_size,self.img_size,3)
             if i ==0 :
@@ -59,47 +63,51 @@ class FaceDCGAN:
         
     #생성망
     def Generator_model(self):
+        noise_shape=self.noise_shape
+        chennel= self.chennel
+        
         model= Sequential()
-        model.add(Dense(256*6*6, activation='relu' ,input_shape=(self.noise_shape)))
-        model.add(Reshape((6, 6, 256)))
-        model.add(BatchNormalization())
+        model.add(Dense(256*4*4, activation='relu' ,input_shape=(noise_shape)))
+        model.add(Reshape((4, 4, 256)))
+        model.add(BatchNormalization(momentum=0.8))
         model.add(UpSampling2D())
-        model.add(Conv2DTranspose(256,activation='relu' ,kernel_size=3))
-        model.add(BatchNormalization())
+        model.add(Conv2D(128,activation='relu' ,kernel_size=3, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
         model.add(UpSampling2D())
-        model.add(Conv2DTranspose(128,activation='relu', kernel_size=3))
-        model.add(BatchNormalization())
+        model.add(Conv2D(64,activation='relu' ,kernel_size=3, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
         model.add(UpSampling2D())
-        model.add(Conv2DTranspose(64,activation='relu', kernel_size=3))
-        model.add(BatchNormalization())
-        model.add(Conv2DTranspose(self.chennel,activation='tanh', kernel_size=3))
-        model.compile(loss= 'binary_crossentropy' , optimizer = Adam(0.0002, 0.5), metrics=['accuracy'])
+        model.add(Conv2D(32,activation='relu' ,kernel_size=3, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(UpSampling2D())
+        model.add(Conv2D(chennel,activation='tanh', kernel_size=3, padding="same"))
+        model.summary()
+        model.compile(loss= 'binary_crossentropy' , optimizer =Adam(0.0002, 0.5), metrics=['accuracy'])
         return(model)
-     
+        
     #판별망
     def Discriminator_model(self):
+        image_shape= (self.img_size,self.img_size,self.chennel)
         model = Sequential()
-        model.add(Conv2D(32, kernel_size=3, strides=2, input_shape=(self.img_size,self.img_size,self.chennel), padding="same"))
+        model.add(Conv2D(64, kernel_size=3, strides=2, input_shape=image_shape))
         model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.5))
-        model.add(Conv2D(64, kernel_size=3, strides=2, padding="same"))
+        model.add(Dropout(0.70))
+        model.add(Conv2D(128, kernel_size=3, strides=2))
         model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.5))
-        model.add(Conv2D(128, kernel_size=3, strides=2, padding="same"))
+        model.add(Dropout(0.70))
+        model.add(Conv2D(256, kernel_size=3, strides=2))
         model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.5))
-        model.add(Conv2D(256, kernel_size=3, strides=1, padding="same"))
+        model.add(Dropout(0.70))
+        model.add(Conv2D(512, kernel_size=3, strides=1))
         model.add(LeakyReLU(alpha=0.2))
         model.add(Flatten())
         model.add(Dense(1, activation='sigmoid'))
-        model.compile(loss= 'binary_crossentropy', optimizer=Adam(0.0002, 0.5), metrics=['accuracy'])
+        model.compile(loss= 'binary_crossentropy', optimizer=Adam(0.0002, 0.5), metrics=['accuracy'])        
         return(model)
         
     #생성망-판별망
     def Generator_Discriminator_model(self):
-
         self.Discriminator.trainable=False
-        
         latent_z=Input(shape=self.noise_shape)
         generated_image=self.Generator(latent_z)
         value=self.Discriminator(generated_image)
@@ -113,11 +121,7 @@ class FaceDCGAN:
     GAN모형은 판별망과 생성망의 학습이 따로 진행된다. 먼저 판별망의 학습을 진행하고 그 후 생성망의 학습을 진행한다. 
     '''
     def train(self):
-
-        self.batch_size=100
-        self.save_interval=100
-        
-        
+       
         half_batch= int(self.batch_size/2)
         
         D_loss_log= [] # loss를 저장하기 위한 리스트
@@ -140,7 +144,7 @@ class FaceDCGAN:
             ImgForTrain=np.concatenate((fake_image, real_image))
             Discriminator_loss = self.Discriminator.train_on_batch(ImgForTrain, labels_rf)
             
-            for i in range(10):
+            for i in range(1):
                 ##생성망 학습하기
                 noise = np.random.normal(0,1,(self.batch_size, 100))
                 labels_fake= np.ones((self.batch_size,), dtype='int') # 학습을 위해 생성된 결과의 레이블은 1로 한다.
@@ -157,7 +161,7 @@ class FaceDCGAN:
     #생성
     def save_imgs(self,epoch):
         img_size=self.img_size
-        r, c = 10, 10
+        r, c = 5, 5
         noise = np.random.normal(0, 1, (r * c, 100))
         gen_imgs = self.Generator.predict(noise)
         
@@ -178,7 +182,7 @@ class FaceDCGAN:
                 axs[i,j].imshow(img,cmap='gray')
                 axs[i,j].axis('off')
                 cnt += 1
-        fig.savefig(self.pyroot+ "/result/face_%d.png" % epoch)
+        fig.savefig( "./result/face_%d.png" % epoch)
         plt.close()
         
 
