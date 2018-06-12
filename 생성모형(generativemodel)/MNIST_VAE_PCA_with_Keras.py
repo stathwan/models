@@ -20,11 +20,11 @@ from keras.optimizers import adam
 
 # hyperparameter, 초모수설정
 K.set_image_data_format('channels_first')
-input_shape=(1,64,64)
-latent_size=1 # z dim
+input_shape=(1,28,28)
+latent_size=100 # z dim
 epsilon_stddev= 1.0
 batch_size=128
-epochs=10
+epochs=20
 
 
 # 필요한 Layer 만들기 
@@ -89,18 +89,18 @@ x_test  = x_test.reshape(-1,*input_shape)
 #encoder, 인코더
 
 x= Input(input_shape)
-encoder_h= Conv2D(32 , kernel_size=3, activation='relu')(x)
-encoder_h= Dropout(rate=(0.4))(encoder_h)
-encoder_h= Conv2D(64, kernel_size=3, activation='relu')(encoder_h)
-encoder_h= Dropout(rate=(0.4))(encoder_h)
-encoder_h= Conv2D(128, kernel_size=3, activation='relu')(encoder_h)
-encoder_h= Flatten()(encoder_h)
-encoder_h= Dense(128)(encoder_h)
+encoder_h= Conv2D(32 , kernel_size=3, activation='relu', name='encoder_h1')(x)
+encoder_h= Dropout(rate=(0.4), name='encoder_h2')(encoder_h)
+encoder_h= Conv2D(64, kernel_size=3, activation='relu', name='encoder_h3')(encoder_h)
+encoder_h= Dropout(rate=(0.4), name='encoder_h4')(encoder_h)
+encoder_h= Conv2D(128, kernel_size=3, activation='relu', name='encoder_h5')(encoder_h)
+encoder_h= Flatten(name='encoder_h6')(encoder_h)
+encoder_h= Dense(128,name='encoder_h7')(encoder_h)
 
 
-mu_hat= Dense(latent_size,activation='linear')(encoder_h) # default latent_size=2
+mu_hat= Dense(latent_size,activation='linear',name='encoder_h8')(encoder_h) # default latent_size=2
 # VAE Loss function has log(variance) such that variance should be >0. To make it calculable We train log_variance  
-log_variance_hat= Dense(latent_size, activation='linear')(encoder_h) 
+log_variance_hat= Dense(latent_size, activation='linear',name='encoder_h9')(encoder_h) 
 # latent z, 잠재변수 z  
 z=sampling(latent_size,epsilon_stddev)([mu_hat, log_variance_hat])
 
@@ -125,10 +125,10 @@ convae.summary()
     
 #fit & save model
 convae.fit(x_train,x_train,shuffle=True, epochs=epochs, batch_size=batch_size, validation_data=(x_test, x_test))
-convae.save_weights('c:/data/vae/vae_model.hdf5')
+#convae.save_weights('c:/data/vae/vae_pca_model.hdf5')
 
 
-convae.load_weights('c:/data/vae/vae_model_latent1.hdf5')
+convae.load_weights('c:/data/vae/vae_pca_model.hdf5')
 
 #encoder
 encoder = Model(x, z)
@@ -144,37 +144,19 @@ plt.colorbar()
 plt.show()
 plt.close()
 
-##visualization latent 111 
-x_test_encoded = encoder.predict(x_test, batch_size=batch_size)
-y = np.ones(shape= x_test_encoded.shape)
-#plt.style.use('ggplot')
-plt.style.use('classic')
-plt.figure(figsize=(6, 6))
-plt.scatter(x_test_encoded[:, 0], y, c=y_test)
-plt.colorbar()
+#pca
+from sklearn import decomposition
+import numpy as np
+import matplotlib.pyplot as plt
+
+x_test_encoded.shape
+pca = decomposition.KernelPCA(n_components=2,kernel='linear')
+result=pca.fit_transform(x_test_encoded)
+result.shape
+result[:,0],result[:,1]
+
+plt.scatter(result[:,0], result[:,1], c=y_test, alpha=0.5)
 plt.show()
-plt.close()
-
-
-
-## sigma 알기 
-#encoder
-encoder_input = Input(input_shape)
-_x=convae.get_layer("encoder_h1")(encoder_input)
-_x=convae.get_layer("encoder_h2")(_x)
-_x=convae.get_layer("encoder_h3")(_x)
-_x=convae.get_layer("encoder_h4")(_x)
-_x=convae.get_layer("encoder_h5")(_x)
-_x=convae.get_layer("encoder_h6")(_x)
-_x=convae.get_layer("encoder_h7")(_x)
-_x_hat=convae.get_layer("encoder_h9")(_x)
-encoder_sigma= Model(encoder_input, _x_hat)
-## predict
-test_result=encoder_sigma.predict(x_test, batch_size=batch_size)
-#visualize
-test_result.shape
-plt.hist(test_result[:,0])
-plt.hist(test_result[:,1])
 
 
 #decoder
@@ -191,7 +173,7 @@ _x=convae.get_layer("decoder_h9")(_x)
 _x_hat=convae.get_layer("decoder_h10")(_x)
 generator = Model(decoder_input, _x_hat)
 
-
+generator
 
 n = 30  # figure with 15x15 digits
 digit_size = 28
@@ -210,37 +192,30 @@ for i, yi in enumerate(grid_x):
 plt.style.use('grayscale')
 plt.figure(figsize=(10, 10))
 plt.imshow(figure)
-plt.savefig("c:/data/{}.jpeg".format('slim'))
+plt.savefig("c:/data/{}.jpeg".format('i'))
 plt.show()
 plt.close()
 
 
+tmp=result[:,0]>3
+tmp.shape
 
-##시각화 3d 
-#grid_k = np.linspace(-2, 2, 15)
-#for k, ki in enumerate(grid_k):
-#    n = 30  # figure with 15x15 digits
-#    digit_size = 28
-#    figure = np.zeros((digit_size * n, digit_size * n))
-#    # we will sample n points within [-15, 15] standard deviations
-#    grid_x = np.linspace(-2, 2, n)
-#    grid_y = np.linspace(-2, 2, n)
-#    
-#    for i, yi in enumerate(grid_x):
-#        for j, xi in enumerate(grid_y):
-#            z_sample = np.array([[xi, yi,ki]]) * epsilon_stddev
-#            x_decoded = generator.predict(z_sample)
-#            digit = x_decoded[0].reshape(digit_size, digit_size)
-#            figure[i * digit_size: (i + 1) * digit_size,
-#                   j * digit_size: (j + 1) * digit_size] = digit
-#    plt.style.use('grayscale')
-#    plt.figure(figsize=(10, 10))
-#    plt.imshow(figure)
-#    plt.savefig("c:/data/{}.jpeg".format(ki))
-#    plt.show()
-#    plt.close()
+aa=x_test[tmp,...]
+aa.shape
+aaa=aa.reshape(7,28,28)
 
 
 
-
-
+test=aaa[1:,...]
+import matplotlib.pylab as plt
+for i in range(0, 6):
+	plt.subplot(330 + 1 + i)
+	plt.imshow(test[i], cmap='gray')
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
