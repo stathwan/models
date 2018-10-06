@@ -10,22 +10,20 @@ VAE(Variational Autoencoder)입니다.
 import numpy as np
 import matplotlib.pyplot as plt
 
-from keras.layers import Dropout, BatchNormalization, Dense, Conv2D, MaxPooling2D, Input, Flatten, Reshape, UpSampling2D
+from keras.layers import Dense, Conv2D, Input, Flatten, Reshape, Conv2DTranspose
 from keras.models import Model 
 from keras import backend as K 
 from keras.engine.topology import Layer
 from keras import metrics
 from keras.datasets import mnist
-from keras.optimizers import adam
 
 # hyperparameter, 초모수설정
 K.set_image_data_format('channels_first')
-input_shape=(1,64,64)
-latent_size=1 # z dim
+input_shape=(1,28,28)
+latent_size=2 # z dim
 epsilon_stddev= 1.0
-batch_size=128
-epochs=10
-
+batch_size=200
+epochs=50
 
 # 필요한 Layer 만들기 
 class sampling(Layer):
@@ -89,116 +87,61 @@ x_test  = x_test.reshape(-1,*input_shape)
 #encoder, 인코더
 
 x= Input(input_shape)
-encoder_h= Conv2D(32 , kernel_size=3, activation='relu')(x)
-encoder_h= Dropout(rate=(0.4))(encoder_h)
-encoder_h= Conv2D(64, kernel_size=3, activation='relu')(encoder_h)
-encoder_h= Dropout(rate=(0.4))(encoder_h)
-encoder_h= Conv2D(128, kernel_size=3, activation='relu')(encoder_h)
+encoder_h= Conv2D(32 , kernel_size=(3,3), activation='relu', padding='same')(x)
+encoder_h= Conv2D(64, kernel_size=(3,3), strides=(2,2), activation='relu', padding='same')(encoder_h)
+encoder_h= Conv2D(64, kernel_size=(3,3), activation='relu', padding='same',)(encoder_h)
+encoder_h= Conv2D(64, kernel_size=(3,3), activation='relu', padding='same',)(encoder_h)
 encoder_h= Flatten()(encoder_h)
-encoder_h= Dense(128)(encoder_h)
+encoder_h= Dense(32)(encoder_h)
 
+mu_hat= Dense(latent_size,activation='linear')(encoder_h) # default latent_size=32
 
-mu_hat= Dense(latent_size,activation='linear')(encoder_h) # default latent_size=2
 # VAE Loss function has log(variance) such that variance should be >0. To make it calculable We train log_variance  
 log_variance_hat= Dense(latent_size, activation='linear')(encoder_h) 
 # latent z, 잠재변수 z  
 z=sampling(latent_size,epsilon_stddev)([mu_hat, log_variance_hat])
 
 #decoder, 디코더
-
-decoder_h=Dense(7*7*128, activation='relu', name='decoder_h1')(z) # to make generator
-decoder_h=Reshape((128,7,7), input_shape=(7*7*128,), name='decoder_h2')(decoder_h)
-decoder_h=BatchNormalization(name='decoder_h3')(decoder_h)
-decoder_h=Conv2D(64 , kernel_size=(3,3),  activation='relu', padding='same', name='decoder_h4')(decoder_h)
-decoder_h=BatchNormalization(name='decoder_h5')(decoder_h)
-decoder_h=UpSampling2D(name='decoder_h6')(decoder_h)
-decoder_h=Conv2D(32 , kernel_size=(3,3),  activation='relu', padding='same', name='decoder_h7')(decoder_h)
-decoder_h=BatchNormalization(name='decoder_h8')(decoder_h)
-decoder_h=UpSampling2D(name='decoder_h9')(decoder_h)
-x_hat=Conv2D(1 , kernel_size=(3,3), activation='sigmoid', padding='same', name='decoder_h10')(decoder_h)
+decoder_h=Dense(14*14*64, activation='relu', name='decoder_h1')(z) # to make generator
+decoder_h=Reshape((64,14,14), input_shape=(14*14*64,), name='decoder_h2')(decoder_h)
+decoder_h=Conv2DTranspose(32 , kernel_size=(3,3),  activation='relu', padding='same', strides=(2,2), name='decoder_h3')(decoder_h)
+x_hat=Conv2D(1 , kernel_size=(3,3), activation='sigmoid', padding='same', name='decoder_h4')(decoder_h)
 convae=Model(x, x_hat)
-            
+
 #compile 
 vaeloss=VAELoss(input_shape,mu_hat,log_variance_hat).convloss
-convae.compile(loss=vaeloss, optimizer=adam(0.0002,0.5))
+convae.compile(loss=vaeloss, optimizer='rmsprop')
 convae.summary()
     
 #fit & save model
 convae.fit(x_train,x_train,shuffle=True, epochs=epochs, batch_size=batch_size, validation_data=(x_test, x_test))
 convae.save_weights('c:/data/vae/vae_model.hdf5')
 
-
-convae.load_weights('c:/data/vae/vae_model_latent1.hdf5')
-
+convae.load_weights('c:/data/vae/vae_model.hdf5')
 #encoder
 encoder = Model(x, z)
-
 ##visualization
 x_test_encoded = encoder.predict(x_test, batch_size=batch_size)
-
-#plt.style.use('ggplot')
-plt.style.use('classic')
 plt.figure(figsize=(6, 6))
 plt.scatter(x_test_encoded[:, 0], x_test_encoded[:, 1], c=y_test)
 plt.colorbar()
 plt.show()
-plt.close()
-
-##visualization latent 111 
-x_test_encoded = encoder.predict(x_test, batch_size=batch_size)
-y = np.ones(shape= x_test_encoded.shape)
-#plt.style.use('ggplot')
-plt.style.use('classic')
-plt.figure(figsize=(6, 6))
-plt.scatter(x_test_encoded[:, 0], y, c=y_test)
-plt.colorbar()
-plt.show()
-plt.close()
-
-
-
-## sigma 알기 
-#encoder
-encoder_input = Input(input_shape)
-_x=convae.get_layer("encoder_h1")(encoder_input)
-_x=convae.get_layer("encoder_h2")(_x)
-_x=convae.get_layer("encoder_h3")(_x)
-_x=convae.get_layer("encoder_h4")(_x)
-_x=convae.get_layer("encoder_h5")(_x)
-_x=convae.get_layer("encoder_h6")(_x)
-_x=convae.get_layer("encoder_h7")(_x)
-_x_hat=convae.get_layer("encoder_h9")(_x)
-encoder_sigma= Model(encoder_input, _x_hat)
-## predict
-test_result=encoder_sigma.predict(x_test, batch_size=batch_size)
-#visualize
-test_result.shape
-plt.hist(test_result[:,0])
-plt.hist(test_result[:,1])
-
 
 #decoder
 decoder_input = Input(shape=(latent_size,))
 _x=convae.get_layer("decoder_h1")(decoder_input)
 _x=convae.get_layer("decoder_h2")(_x)
 _x=convae.get_layer("decoder_h3")(_x)
-_x=convae.get_layer("decoder_h4")(_x)
-_x=convae.get_layer("decoder_h5")(_x)
-_x=convae.get_layer("decoder_h6")(_x)
-_x=convae.get_layer("decoder_h7")(_x)
-_x=convae.get_layer("decoder_h8")(_x)
-_x=convae.get_layer("decoder_h9")(_x)
-_x_hat=convae.get_layer("decoder_h10")(_x)
+_x_hat=convae.get_layer("decoder_h4")(_x)
 generator = Model(decoder_input, _x_hat)
 
-
-
-n = 30  # figure with 15x15 digits
+##visualization
+n = 15  # figure with 15x15 digits
 digit_size = 28
 figure = np.zeros((digit_size * n, digit_size * n))
 # we will sample n points within [-15, 15] standard deviations
-grid_x = np.linspace(-2, 2, n)
-grid_y = np.linspace(-2, 2, n)
+grid_x = np.linspace(-15, 15, n)
+grid_y = np.linspace(-15, 15, n)
 
 for i, yi in enumerate(grid_x):
     for j, xi in enumerate(grid_y):
@@ -207,38 +150,13 @@ for i, yi in enumerate(grid_x):
         digit = x_decoded[0].reshape(digit_size, digit_size)
         figure[i * digit_size: (i + 1) * digit_size,
                j * digit_size: (j + 1) * digit_size] = digit
-plt.style.use('grayscale')
+
 plt.figure(figsize=(10, 10))
 plt.imshow(figure)
-plt.savefig("c:/data/{}.jpeg".format('slim'))
 plt.show()
-plt.close()
 
 
 
-##시각화 3d 
-#grid_k = np.linspace(-2, 2, 15)
-#for k, ki in enumerate(grid_k):
-#    n = 30  # figure with 15x15 digits
-#    digit_size = 28
-#    figure = np.zeros((digit_size * n, digit_size * n))
-#    # we will sample n points within [-15, 15] standard deviations
-#    grid_x = np.linspace(-2, 2, n)
-#    grid_y = np.linspace(-2, 2, n)
-#    
-#    for i, yi in enumerate(grid_x):
-#        for j, xi in enumerate(grid_y):
-#            z_sample = np.array([[xi, yi,ki]]) * epsilon_stddev
-#            x_decoded = generator.predict(z_sample)
-#            digit = x_decoded[0].reshape(digit_size, digit_size)
-#            figure[i * digit_size: (i + 1) * digit_size,
-#                   j * digit_size: (j + 1) * digit_size] = digit
-#    plt.style.use('grayscale')
-#    plt.figure(figsize=(10, 10))
-#    plt.imshow(figure)
-#    plt.savefig("c:/data/{}.jpeg".format(ki))
-#    plt.show()
-#    plt.close()
 
 
 
